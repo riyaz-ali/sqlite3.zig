@@ -20,7 +20,7 @@ pub fn version() i32 {
 pub const OpenFlags = struct { ReadWrite: bool = false, Create: bool = false, OpenWal: bool = false };
 
 /// Open opens a new database connection using sqlite3_open_v2 api.
-pub fn open(path: [:0]const u8, opts: OpenFlags) !*Database {
+pub fn open(path: [:0]const u8, opts: OpenFlags) errors.Error!*Database {
     var flags: c_int = c.SQLITE_OPEN_URI;
     flags |= @as(c_int, if (opts.ReadWrite) c.SQLITE_OPEN_READWRITE else c.SQLITE_OPEN_READONLY);
 
@@ -47,7 +47,7 @@ pub const Database = opaque {
 
     /// Close closes the current database connection,
     /// freeing up any allocated resources.
-    pub fn close(self: *Self) !void {
+    pub fn close(self: *Self) errors.Error!void {
         const conn = @ptrCast(*c.sqlite3, self);
         const ret = c.sqlite3_close(conn);
         if (ret != c.SQLITE_OK) {
@@ -69,9 +69,19 @@ pub const Database = opaque {
         return @as(i64, c.sqlite3_last_insert_rowid(conn));
     }
 
+    /// LastError returns text message that describes the error.
+    ///
+    /// Memory to hold the error message string is managed internally. 
+    /// The application does not need to worry about freeing the result. 
+    /// However, the error string might be overwritten or deallocated by subsequent calls to other SQLite interface functions.
+    pub fn lastError(self: *Self) [:0]const u8 {
+        const conn = @ptrCast(*c.sqlite3, self);
+        return std.mem.sliceTo(c.sqlite3_errmsg(conn), 0);
+    }
+
     /// Prepare prepares the given string query and converts it into a prepared statement.
     /// See: https://www.sqlite.org/c3ref/prepare.html for details.
-    pub fn prepare(self: *Self, query: []const u8) !*Statement {
+    pub fn prepare(self: *Self, query: []const u8) errors.Error!*Statement {
         const conn = @ptrCast(*c.sqlite3, self);
 
         var s: ?*c.sqlite3_stmt = undefined;
@@ -96,7 +106,7 @@ pub const Statement = opaque {
     /// If a row of data is available then it returns true, else false.
     /// 
     /// Any other errors are reported as appropriate error value.
-    pub fn step(self: *Self) !bool {
+    pub fn step(self: *Self) errors.Error!bool {
         const stmt = @ptrCast(*c.sqlite3_stmt, self);
         const ret = c.sqlite3_step(stmt);
         if (ret != c.SQLITE_ROW and ret != c.SQLITE_DONE) {
@@ -108,7 +118,7 @@ pub const Statement = opaque {
 
     /// Reset resets a prepared statement so it can be executed again.
     /// Any parameter values bound to the statement are retained.
-    pub fn reset(self: *Self) !void {
+    pub fn reset(self: *Self) errors.Error!void {
         const stmt = @ptrCast(*c.sqlite3_stmt, self);
         const ret = c.sqlite3_reset(stmt);
         if (ret != c.SQLITE_OK) {
@@ -128,12 +138,19 @@ pub const Statement = opaque {
     ///
     /// This routine can be called at any point during the life cycle of prepared statement.
     /// The application must finalize every prepared statement in order to avoid resource leaks.
-    pub fn finalize(self: *Self) !void {
+    pub fn finalize(self: *Self) errors.Error!void {
         const stmt = @ptrCast(*c.sqlite3_stmt, self);
         const ret = c.sqlite3_finalize(stmt);
         if (ret != c.SQLITE_OK) {
             return errors.from(ret);
         }
+    }
+
+    /// Database returns the database connection handle to which a prepared statement belongs
+    pub fn database(self: *Self) *Database {
+        const stmt = @ptrCast(*c.sqlite3_stmt, self);
+        const db: *c.sqlite3 = c.sqlite3_db_handle(stmt);
+        return @ptrCast(*Database, db);
     }
 
     /// BindParamCount reports the number of parameters in stmt.
@@ -145,7 +162,7 @@ pub const Statement = opaque {
     /// Bind binds the given value at the specified index or named parameter.
     ///
     /// Value of type []u8 is bound as text. Use Blob to bind as byte slices.
-    pub fn bind(self: *Self, param: BindParam, value: anytype) !void {
+    pub fn bind(self: *Self, param: BindParam, value: anytype) errors.Error!void {
         const stmt = @ptrCast(*c.sqlite3_stmt, self);
         const Type = @TypeOf(value);
 
@@ -206,7 +223,7 @@ pub const Statement = opaque {
     /// It doesn't perform any allocation. Values of type text / blob references
     /// the underlying C-managed memory directly, that stops being valid as soon as 
     /// the statement row resets.
-    pub fn get(self: *Self, comptime T: type, col: usize) !T {
+    pub fn get(self: *Self, comptime T: type, col: usize) T {
         const stmt = @ptrCast(*c.sqlite3_stmt, self);
 
         switch (@typeInfo(T)) {
