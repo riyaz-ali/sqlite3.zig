@@ -192,7 +192,7 @@ pub const Statement = opaque {
             .Pointer => |ptr| switch (ptr.size) {
                 .Slice => switch (ptr.child) {
                     u8 => {
-                        ret = c.sqlite3_bind_text(stmt, pos, value.ptr, @intCast(c_int, value.len), null);
+                        ret = c.sqlite3_bind_text(stmt, pos, value.ptr, @intCast(c_int, value.len), c.SQLITE_TRANSIENT);
                     },
                     else => @compileError("unsupported slice type:" ++ @typeName(ptr.child)),
                 },
