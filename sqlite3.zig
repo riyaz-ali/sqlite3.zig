@@ -10,6 +10,8 @@ const std = @import("std");
 const c = @import("c.zig").c;
 
 const errors = @import("errors.zig");
+const func = @import("func.zig");
+const context = @import("context.zig");
 
 /// Version returns the sqlite3 library version
 pub fn version() i32 {
@@ -91,6 +93,29 @@ pub const Database = opaque {
         }
 
         return @ptrCast(*Statement, s.?);
+    }
+
+    /// CreateScalarFunction registers a custom scalar function with the provided database connection object.
+    pub fn createScalarFunction(self: *Self, opts: func.FuncOptions, ptr: anytype, comptime apply: func.ApplyFn(ptr)) !void {
+        return func.createScalarFunction(self, opts, ptr, apply);
+    }
+
+    /// CreateAggregateFunction registers a custom aggregate function with the provided database connection object.
+    pub fn createAggregateFunction(self: *Self, opts: func.FuncOptions, ptr: anytype, comptime step: func.AggregateStepFn(ptr), comptime final: func.AggregateFinalFn(ptr)) !void {
+        return func.createAggregateFunction(self, opts, ptr, step, final);
+    }
+
+    /// CreateWindowFunction registers a custom window function with the provided database connection object.
+    pub fn createWindowFunction(
+        self: *Self,
+        opts: func.FuncOptions,
+        ptr: anytype,
+        comptime step: func.AggregateStepFn(ptr),
+        comptime value: func.WindowValueFn(ptr),
+        comptime inverse: func.WindowInverseFn(ptr),
+        comptime final: func.AggregateFinalFn(ptr),
+    ) !void {
+        return func.createWindowFunction(self, opts, ptr, step, value, inverse, final);
     }
 };
 
@@ -175,36 +200,24 @@ pub const Statement = opaque {
             },
         };
 
-        var ret: i32 = 0;
-        switch (@typeInfo(Type)) {
-            .Int, .ComptimeInt => {
-                ret = c.sqlite3_bind_int64(stmt, pos, @intCast(c_longlong, value));
-            },
-
-            .Float, .ComptimeFloat => {
-                ret = c.sqlite3_bind_double(stmt, pos, value);
-            },
-
-            .Bool => {
-                ret = c.sqlite3_bind_int64(stmt, pos, @boolToInt(value));
-            },
-
-            .Pointer => |ptr| switch (ptr.size) {
-                .Slice => switch (ptr.child) {
-                    u8 => {
-                        ret = c.sqlite3_bind_text(stmt, pos, value.ptr, @intCast(c_int, value.len), c.SQLITE_TRANSIENT);
+        var ret: i32 = switch (Type) {
+            *Value => c.sqlite3_bind_value(stmt, pos, @ptrCast(*c.sqlite3_value, value)),
+            ZeroBlob => |zb| c.sqlite3_bind_zeroblob64(stmt, pos, zb.len),
+            else => switch (@typeInfo(Type)) {
+                .Int, .ComptimeInt => c.sqlite3_bind_int64(stmt, pos, @intCast(c_longlong, value)),
+                .Float, .ComptimeFloat => c.sqlite3_bind_double(stmt, pos, value),
+                .Bool => c.sqlite3_bind_int64(stmt, pos, @boolToInt(value)),
+                .Pointer => |ptr| switch (ptr.size) {
+                    .Slice => switch (ptr.child) {
+                        u8 => c.sqlite3_bind_text(stmt, pos, value.ptr, @intCast(c_int, value.len), c.SQLITE_TRANSIENT),
+                        else => @compileError("unsupported slice type:" ++ @typeName(ptr.child)),
                     },
-                    else => @compileError("unsupported slice type:" ++ @typeName(ptr.child)),
+                    else => @compileError("unsupported pointer type:" ++ @typeName(Type)),
                 },
-                else => @compileError("unsupported pointer type:" ++ @typeName(Type)),
+                .Null => c.sqlite3_bind_null(stmt, pos),
+                else => @compileError("unsupported type:" ++ @typeName(Type)),
             },
-
-            .Null => {
-                ret = c.sqlite3_bind_null(stmt, pos);
-            },
-
-            else => @compileError("unsupported type:" ++ @typeName(Type)),
-        }
+        };
 
         if (ret != c.SQLITE_OK) {
             return errors.from(ret);
@@ -273,4 +286,9 @@ pub const Statement = opaque {
 ///
 /// A ZeroBlob is intended to serve as a placeholder; content can later be written with incremental i/o.
 /// See "zeroblob" on https://sqlite.org/c3ref/blob_open.html for more details.
-pub const ZeroBlob = struct { len: usize };
+pub const ZeroBlob = struct { len: u64 };
+
+// Re-export public api from here
+pub const Context = context.Context;
+pub const Value = context.Value;
+pub const ColumnType = context.ColumnType;
