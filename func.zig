@@ -9,31 +9,6 @@ const errors = @import("errors.zig");
 const sqlite3 = @import("sqlite3.zig");
 const c = @import("c.zig").c;
 
-// ApplyFn(ptr) is comptime utility to create typed function signature for scalar function
-pub fn ApplyFn(ptr: anytype) type {
-    return fn (@TypeOf(ptr), *sqlite3.Context, []const *sqlite3.Value) void;
-}
-
-// AggregateStepFn(ptr) is comptime utility to create typed function signature for aggregate step function
-pub fn AggregateStepFn(ptr: anytype) type {
-    return fn (@TypeOf(ptr), *sqlite3.Context, []const *sqlite3.Value) void;
-}
-
-// AggregateFinalFn(ptr) is comptime utility to create typed function signature for aggregate final function
-pub fn AggregateFinalFn(ptr: anytype) type {
-    return fn (@TypeOf(ptr), *sqlite3.Context) void;
-}
-
-// WindowValueFn(ptr) is comptime utility to create typed function signature for window value function
-pub fn WindowValueFn(ptr: anytype) type {
-    return fn (@TypeOf(ptr), *sqlite3.Context) void;
-}
-
-// WindowInverseFn(ptr) is comptime utility to create typed function signature for window inverse function
-pub fn WindowInverseFn(ptr: anytype) type {
-    return fn (@TypeOf(ptr), *sqlite3.Context, []const *sqlite3.Value) void;
-}
-
 pub const FuncOptions = struct {
     /// Name of the function to register with sqlite3
     Name: [:0]const u8,
@@ -47,7 +22,12 @@ pub const FuncOptions = struct {
 };
 
 /// createScalarFunction registers the custom scalar function with the provided database connection object.
-pub fn createScalarFunction(db: *sqlite3.Database, opts: FuncOptions, ptr: anytype, comptime apply: ApplyFn(ptr)) !void {
+pub fn createScalarFunction(
+    db: *sqlite3.Database,
+    opts: FuncOptions,
+    ptr: anytype,
+    comptime apply: fn (@TypeOf(ptr), *sqlite3.Context, []const *sqlite3.Value) void,
+) !void {
     const conn = @ptrCast(*c.sqlite3, db);
 
     const Ptr = @TypeOf(ptr);
@@ -81,7 +61,13 @@ pub fn createScalarFunction(db: *sqlite3.Database, opts: FuncOptions, ptr: anyty
 }
 
 /// createAggregateFunction registers the custom aggregate function with the provided database connection object.
-pub fn createAggregateFunction(db: *sqlite3.Database, opts: FuncOptions, ptr: anytype, comptime step: AggregateStepFn(ptr), comptime final: AggregateFinalFn(ptr)) !void {
+pub fn createAggregateFunction(
+    db: *sqlite3.Database,
+    opts: FuncOptions,
+    ptr: anytype,
+    comptime step: fn (@TypeOf(ptr), *sqlite3.Context, []const *sqlite3.Value) void,
+    comptime final: fn (@TypeOf(ptr), *sqlite3.Context) void,
+) !void {
     const conn = @ptrCast(*c.sqlite3, db);
 
     const Ptr = @TypeOf(ptr);
@@ -124,10 +110,10 @@ pub fn createWindowFunction(
     db: *sqlite3.Database,
     opts: FuncOptions,
     ptr: anytype,
-    comptime step: AggregateStepFn(ptr),
-    comptime value: WindowValueFn(ptr),
-    comptime inverse: WindowInverseFn(ptr),
-    comptime final: AggregateFinalFn(ptr),
+    comptime step: fn (@TypeOf(ptr), *sqlite3.Context, []const *sqlite3.Value) void,
+    comptime value: fn (@TypeOf(ptr), *sqlite3.Context) void,
+    comptime inverse: fn (@TypeOf(ptr), *sqlite3.Context, []const *sqlite3.Value) void,
+    comptime final: fn (@TypeOf(ptr), *sqlite3.Context) void,
 ) !void {
     const conn = @ptrCast(*c.sqlite3, db);
 

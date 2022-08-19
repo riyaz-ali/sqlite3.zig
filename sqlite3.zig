@@ -96,12 +96,23 @@ pub const Database = opaque {
     }
 
     /// CreateScalarFunction registers a custom scalar function with the provided database connection object.
-    pub fn createScalarFunction(self: *Self, opts: func.FuncOptions, ptr: anytype, comptime apply: func.ApplyFn(ptr)) !void {
+    pub fn createScalarFunction(
+        self: *Self,
+        opts: func.FuncOptions,
+        ptr: anytype,
+        comptime apply: fn (@TypeOf(ptr), *Context, []const *Value) void,
+    ) !void {
         return func.createScalarFunction(self, opts, ptr, apply);
     }
 
     /// CreateAggregateFunction registers a custom aggregate function with the provided database connection object.
-    pub fn createAggregateFunction(self: *Self, opts: func.FuncOptions, ptr: anytype, comptime step: func.AggregateStepFn(ptr), comptime final: func.AggregateFinalFn(ptr)) !void {
+    pub fn createAggregateFunction(
+        self: *Self,
+        opts: func.FuncOptions,
+        ptr: anytype,
+        comptime step: fn (@TypeOf(ptr), *Context, []const *Value) void,
+        comptime final: fn (@TypeOf(ptr), *Context) void,
+    ) !void {
         return func.createAggregateFunction(self, opts, ptr, step, final);
     }
 
@@ -110,10 +121,10 @@ pub const Database = opaque {
         self: *Self,
         opts: func.FuncOptions,
         ptr: anytype,
-        comptime step: func.AggregateStepFn(ptr),
-        comptime value: func.WindowValueFn(ptr),
-        comptime inverse: func.WindowInverseFn(ptr),
-        comptime final: func.AggregateFinalFn(ptr),
+        comptime step: fn (@TypeOf(ptr), *Context, []const *Value) void,
+        comptime value: fn (@TypeOf(ptr), *Context) void,
+        comptime inverse: fn (@TypeOf(ptr), *Context, []const *Value) void,
+        comptime final: fn (@TypeOf(ptr), *Context) void,
     ) !void {
         return func.createWindowFunction(self, opts, ptr, step, value, inverse, final);
     }
