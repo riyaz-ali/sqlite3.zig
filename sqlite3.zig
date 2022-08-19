@@ -202,7 +202,7 @@ pub const Statement = opaque {
 
         var ret: i32 = switch (Type) {
             *Value => c.sqlite3_bind_value(stmt, pos, @ptrCast(*c.sqlite3_value, value)),
-            ZeroBlob => |zb| c.sqlite3_bind_zeroblob64(stmt, pos, zb.len),
+            ZeroBlob => c.sqlite3_bind_zeroblob64(stmt, pos, value.len),
             else => switch (@typeInfo(Type)) {
                 .Int, .ComptimeInt => c.sqlite3_bind_int64(stmt, pos, @intCast(c_longlong, value)),
                 .Float, .ComptimeFloat => c.sqlite3_bind_double(stmt, pos, value),
