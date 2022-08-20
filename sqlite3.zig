@@ -128,6 +128,30 @@ pub const Database = opaque {
     ) !void {
         return func.createWindowFunction(self, opts, ptr, step, value, inverse, final);
     }
+
+    // selector for database name to use when opening a blob
+    pub const DatabaseName = union(enum) { main, temp, attached: [:0]const u8 };
+
+    /// OpenBlob opens a previously created blob object for incremental i/o ops.
+    /// See: https://www.sqlite.org/c3ref/blob_open.html
+    pub fn openBlob(self: *Self, db: DatabaseName, table: [:0]const u8, column: [:0]const u8, row: i64, write: bool) errors.Error!*blob.ReadWriter {
+        const conn = @ptrCast(*c.sqlite3, self);
+        const flag: c_int = if (write) 1 else 0;
+
+        const databaseName = switch (db) {
+            .main => "main",
+            .temp => "temp",
+            .attached => |name| name,
+        };
+
+        var blob_ptr: ?*c.sqlite3_blob = undefined;
+        const result = c.sqlite3_blob_open(conn, databaseName, table, column, row, flag, &blob_ptr);
+        if (result != c.SQLITE_OK) {
+            return errors.from(result);
+        }
+
+        return @ptrCast(*blob.ReadWriter, blob_ptr);
+    }
 };
 
 // BindParam union is used to select between positional and named parameters while binding
