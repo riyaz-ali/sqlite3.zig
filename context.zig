@@ -15,7 +15,8 @@ pub const Context = opaque {
 
         _ = switch (T) {
             *Value => c.sqlite3_result_value(ctx, @ptrCast(*c.sqlite3_value, value)),
-            sqlite3.ZeroBlob => c.sqlite3_result_zeroblob64(ctx, @intCast(c.sqlite3_uint64, value.len)),
+            sqlite3.blob.ZeroBlob => c.sqlite3_result_zeroblob64(ctx, @intCast(c.sqlite3_uint64, value.len)),
+            sqlite3.blob.Blob => c.sqlite3_result_blob(ctx, value.ptr, @intCast(c_int, value.len), c.SQLITE_TRANSIENT),
             else => switch (@typeInfo(T)) {
                 .Int => |info| if ((info.bits + if (info.signedness == .unsigned) 1 else 0) <= 32) {
                     c.sqlite3_result_int(ctx, value);
@@ -72,40 +73,51 @@ pub const Value = opaque {
     /// It doesn't perform any allocation. Values of type text / blob references
     /// the underlying C-managed memory directly, that stops being valid as soon as 
     /// the function call returns.
-    pub fn get(self: *Self, comptime T: type) T {
+    pub fn as(self: *Self, comptime T: type) T {
         const value = @ptrCast(*c.sqlite3_value, self);
 
-        switch (@typeInfo(T)) {
-            .Int => |info| if ((info.bits + if (info.signedness == .unsigned) 1 else 0) <= 32) {
-                return @intCast(T, c.sqlite3_value_int(value));
-            } else if ((info.bits + if (info.signedness == .unsigned) 1 else 0) <= 64) {
-                return @intCast(T, c.sqlite3_value_int64(value));
-            } else {
-                @compileError("integer " ++ @typeName(T) ++ " is not representable in sqlite");
+        switch (T) {
+            sqlite3.blob.Blob => {
+                const size = @intCast(usize, c.sqlite3_value_bytes(value));
+                const bytes = c.sqlite3_value_blob(value);
+                if (bytes != null) {
+                    return @as(sqlite3.blob.Blob, @ptrCast([*]const u8, bytes)[0..size]);
+                }
+
+                return @as(sqlite3.blob.Blob, undefined);
             },
-
-            .Float => return @floatCast(T, c.sqlite3_value_double(value)),
-            .Bool => return @intCast(i32, c.sqlite3_value_int(value)) > 0,
-            .Pointer => |ptr| switch (ptr.size) {
-                .Slice => switch (ptr.child) {
-                    u8 => {
-                        if (comptime !ptr.is_const) {
-                            @compileError("buffer must be a constant type");
-                        }
-
-                        const size = @intCast(usize, c.sqlite3_value_bytes(value));
-                        const bytes = c.sqlite3_value_text(value);
-                        if (bytes != null) {
-                            return @ptrCast([*]const u8, bytes)[0..size];
-                        }
-
-                        return @as([]const u8, "");
-                    },
-                    else => @compileError("unsupported slice type:" ++ @typeName(ptr.child)),
+            else => switch (@typeInfo(T)) {
+                .Int => |info| if ((info.bits + if (info.signedness == .unsigned) 1 else 0) <= 32) {
+                    return @intCast(T, c.sqlite3_value_int(value));
+                } else if ((info.bits + if (info.signedness == .unsigned) 1 else 0) <= 64) {
+                    return @intCast(T, c.sqlite3_value_int64(value));
+                } else {
+                    @compileError("integer " ++ @typeName(T) ++ " is not representable in sqlite");
                 },
-                else => @compileError("unsupported pointer type:" ++ @typeName(T)),
+
+                .Float => return @floatCast(T, c.sqlite3_value_double(value)),
+                .Bool => return @intCast(i32, c.sqlite3_value_int(value)) > 0,
+                .Pointer => |ptr| switch (ptr.size) {
+                    .Slice => switch (ptr.child) {
+                        u8 => {
+                            if (comptime !ptr.is_const) {
+                                @compileError("buffer must be a constant type");
+                            }
+
+                            const size = @intCast(usize, c.sqlite3_value_bytes(value));
+                            const bytes = c.sqlite3_value_text(value);
+                            if (bytes != null) {
+                                return @ptrCast([*]const u8, bytes)[0..size];
+                            }
+
+                            return @as([]const u8, undefined);
+                        },
+                        else => @compileError("unsupported slice type:" ++ @typeName(ptr.child)),
+                    },
+                    else => @compileError("unsupported pointer type:" ++ @typeName(T)),
+                },
+                else => @compileError("unsupported type: " ++ @typeName(T)),
             },
-            else => @compileError("unsupported type: " ++ @typeName(T)),
         }
     }
 

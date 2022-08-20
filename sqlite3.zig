@@ -213,7 +213,8 @@ pub const Statement = opaque {
 
         var ret: i32 = switch (Type) {
             *Value => c.sqlite3_bind_value(stmt, pos, @ptrCast(*c.sqlite3_value, value)),
-            ZeroBlob => c.sqlite3_bind_zeroblob64(stmt, pos, value.len),
+            blob.ZeroBlob => c.sqlite3_bind_zeroblob64(stmt, pos, value.len),
+            blob.Blob => c.sqlite3_bind_blob(stmt, pos, value.ptr, @intCast(c_int, value.len), c.SQLITE_TRANSIENT),
             else => switch (@typeInfo(Type)) {
                 .Int, .ComptimeInt => c.sqlite3_bind_int64(stmt, pos, @intCast(c_longlong, value)),
                 .Float, .ComptimeFloat => c.sqlite3_bind_double(stmt, pos, value),
@@ -293,13 +294,9 @@ pub const Statement = opaque {
     }
 };
 
-/// ZeroBlob is a blob with a fixed length containing only zeroes.
-///
-/// A ZeroBlob is intended to serve as a placeholder; content can later be written with incremental i/o.
-/// See "zeroblob" on https://sqlite.org/c3ref/blob_open.html for more details.
-pub const ZeroBlob = struct { len: u64 };
-
 // Re-export public api from here
 pub const Context = context.Context;
 pub const Value = context.Value;
 pub const ColumnType = context.ColumnType;
+
+pub const blob = @import("blob.zig");

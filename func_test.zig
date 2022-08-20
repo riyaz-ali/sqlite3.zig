@@ -10,10 +10,10 @@ pub const UpperFn = struct {
     allocator: std.mem.Allocator,
 
     pub fn apply(self: *Self, ctx: *sqlite3.Context, args: []const *sqlite3.Value) void {
-        var str = self.allocator.alloc(u8, args[0].get([]const u8).len) catch unreachable;
+        var str = self.allocator.alloc(u8, args[0].as([]const u8).len) catch unreachable;
         defer self.allocator.free(str);
 
-        var value = args[0].get([]const u8);
+        var value = args[0].as([]const u8);
         for (value) |char, i| {
             str[i] = std.ascii.toUpper(char);
         }
@@ -46,7 +46,7 @@ pub const SumFn = struct {
     const SumContext = struct { sum: i64 = 0 };
 
     pub fn step(_: *Self, ctx: *sqlite3.Context, args: []const *sqlite3.Value) void {
-        ctx.data(SumContext).sum += args[0].get(i64);
+        ctx.data(SumContext).sum += args[0].as(i64);
     }
 
     pub fn value(_: *Self, ctx: *sqlite3.Context) void {
@@ -54,7 +54,7 @@ pub const SumFn = struct {
     }
 
     pub fn inverse(_: *Self, ctx: *sqlite3.Context, args: []const *sqlite3.Value) void {
-        ctx.data(SumContext).sum -= args[0].get(i64);
+        ctx.data(SumContext).sum -= args[0].as(i64);
     }
 
     pub fn final(_: *Self, ctx: *sqlite3.Context) void {

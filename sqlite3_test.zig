@@ -45,7 +45,7 @@ test "can successfully bind all supported types" {
     try stmt.bind(.{ .Index = 3 }, true);
     try stmt.bind(.{ .Index = 4 }, @as([]const u8, "hello"));
     try stmt.bind(.{ .Index = 5 }, null);
-    try stmt.bind(.{ .Index = 6 }, sqlite3.ZeroBlob{ .len = 10 });
+    try stmt.bind(.{ .Index = 6 }, sqlite3.blob.ZeroBlob{ .len = 10 });
     _ = try stmt.step();
     try stmt.finalize();
 
@@ -55,7 +55,7 @@ test "can successfully bind all supported types" {
     try stmt.bind(.{ .Named = "$c" }, true);
     try stmt.bind(.{ .Named = "$d" }, @as([]const u8, "hello"));
     try stmt.bind(.{ .Named = "$e" }, null);
-    try stmt.bind(.{ .Named = "$f" }, sqlite3.ZeroBlob{ .len = 10 });
+    try stmt.bind(.{ .Named = "$f" }, sqlite3.blob.ZeroBlob{ .len = 10 });
     _ = try stmt.step();
     try stmt.finalize();
 }
@@ -102,4 +102,18 @@ test "reports correct bind and column counts" {
 
     try testing.expectEqual(false, try stmt.step());
     try stmt.finalize();
+}
+
+test "correctly binds blob data" {
+    const db = try sqlite3.open("file::memory:", .{ .ReadWrite = true });
+    defer db.close() catch {};
+
+    var stmt = try db.prepare("SELECT typeof($1), length($1)");
+    defer stmt.finalize() catch {};
+
+    try stmt.bind(.{ .Named = "$1" }, @as(sqlite3.blob.Blob, "i am a blob not a string"));
+    try testing.expectEqual(true, try stmt.step());
+
+    try testing.expectEqualStrings("blob", stmt.get([]const u8, 0));
+    try testing.expectEqual(@as(i32, "i am a blob not a string".len), stmt.get(i32, 1));
 }
