@@ -7,7 +7,7 @@
 //! any single 'opinionated' way.
 
 const std = @import("std");
-const c = @import("c.zig").c;
+pub const c = @import("c.zig").c;
 
 const errors = @import("errors.zig");
 const func = @import("func.zig");
